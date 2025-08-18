@@ -1,0 +1,157 @@
+@extends('admin.layout.base')
+
+@section('title', 'Attendance Reports ')
+
+@section('content')
+<div class="content-area py-1">
+    <div class="container-fluid">
+    	<div class="box box-block bg-white"> 
+        <form action="{{route('admin.reportattendance')}}" method="GET">
+            <div class="row">
+                <div class="col-xs-4">
+                   <select class="form-control selectpicker" data-show-subtext="true" data-live-search="true" name="district_id" required>
+                   	<option value="">Please Select District</option>
+                    @foreach($districts as $district)
+                    <option value="{{$district->id}}" @if(Request::get('district_id')) @if(@Request::get('district_id') == $district->id) selected @endif @endif>{{$district->name}} </option> 
+                   @endforeach 
+                  </select>
+                </div>
+
+                <div class="form-group row col-md-3">
+                            <label for="name" class="col-xs-4 col-form-label">Date From</label>
+                            <div class="col-xs-8">
+                                <input class="form-control" type="date" name="from_date" required placeholder="From Date">
+                            </div>
+                </div>
+                            
+                <div class="form-group row col-md-3">
+                            <label for="email" class="col-xs-4 col-form-label">Date To</label>
+                            <div class="col-xs-8">
+                                <input class="form-control" type="date" required name="to_date" placeholder="To Date">
+                            </div>
+                  </div>
+                
+                <div class="col-xs-2">
+                    <button type="submit" class="form-control btn btn-primary">Fetch</button>
+                </div>  
+            </div>
+        </form>
+        </div> 
+        <div class="box box-block bg-white">
+            @if(Setting::get('demo_mode') == 1)
+        <div class="col-md-12" style="height:50px;color:red;">
+                    ** Demo Mode : @lang('admin.demomode')
+                </div>
+                @endif
+            <h5 class="mb-1">
+                @lang('admin.provides.providers')
+                @if(Setting::get('demo_mode', 0) == 1)
+                <span class="pull-right">(*personal information hidden in demo)</span>
+                @endif
+            </h5>
+            <table class="table table-striped table-bordered dataTable" id="table-2">
+                <thead>
+                    <tr>
+                        <th>@lang('admin.id')</th>
+                        <th>@lang('admin.district')</th>
+                        <th>@lang('admin.name')</th>
+                        <th>@lang('admin.designation')</th>
+                        <th>@lang('admin.mobile')</th>                       
+                        <th>@lang('admin.totalwork')</th>
+                        <th>@lang('admin.leaves')</th>
+						<th>@lang('admin.presentday')</th>
+						<th>Present Dates</th>
+						<th>Absent Dates</th>
+                    </tr>
+                </thead>
+                <tbody>
+				
+				
+                	@if(count($providers) > 0)
+				  @php($i=0)
+                @foreach($providers as $index => $provider)
+                   @php($i++)
+				    <?php
+					$absentdays = array();
+					for($i=0; $i<31; $i++){
+                       $t = $i-2;
+					$absentdays[] = date('Y-m-d',strtotime("$t day"));
+
+					}
+					
+					?>
+                    <tr>
+                        <td>{{$i}}</td>
+                         <td>{{$provider->district_name}}</td>
+                        <td>{{ $provider->first_name }} {{ $provider->last_name }}</td> 
+                        @if($provider->type == 1)
+                        <td>POP Engineer</td>
+                        @else 
+                         <td>FRT Engineer</td>
+                        @endif
+                        <td>{{ $provider->mobile }}</td>
+                        <td>
+						@php($now = Carbon\Carbon::now())
+						{{cal_days_in_month(CAL_GREGORIAN,($now->month),($now->year))}}
+                        </td>
+                         <td>
+						{{cal_days_in_month(CAL_GREGORIAN,($now->month),($now->year)) - $provider->present }}
+                        </td>
+						
+						<td>{{$provider->present}}</td>
+						
+						<td><ul>
+						  <?php 
+						  $pdates =explode( ',', $provider->presentdates);
+						  foreach($pdates as $dates){?>
+						    <li style="background-color:#FFFF00;list-style-type:none;">{{DateTime::createFromFormat("Y-m-d H:i:s", $dates)->format("d-m-Y")}}</li>
+						  <?php }?>
+						</ul></td>
+						
+						<td><ul>
+						  <?php 
+						  $pdates =explode(',', $provider->origindate);
+						   //dd($absentdays);
+						  
+ 				  	if(count($absentdays)>0 && count($pdates)>0)
+							{
+							  $new_list=array_diff($absentdays,$pdates);
+							  
+							  foreach($new_list as $j)
+							  {
+								  ?>
+								<li style="background-color:#FF0000;list-style-type:none;">{{ $j}}</li>
+							  <?php
+							  }
+							}
+						  
+						  ?>
+						</ul></td>
+						
+                    </tr>
+                @endforeach
+                @else
+                 <tr><td colspan="10">No Records Found in this District  !..</td></tr>
+                @endif
+                </tbody>
+                <!--<tfoot>
+                    <tr>
+                        <th>@lang('admin.id')</th>
+                        <th>@lang('admin.provides.full_name')</th>
+                        <th>@lang('admin.email')</th>
+                        <th>@lang('admin.mobile')</th>
+                        <th>@lang('admin.provides.total_requests')</th>
+                        <th>@lang('admin.provides.accepted_requests')</th>
+                        <th>@lang('admin.provides.cancelled_requests')</th> 
+                        <th>@lang('admin.provides.service_type')</th>
+                        <th>@lang('admin.provides.online')</th>
+                        <th>@lang('admin.action')</th>
+                    </tr>
+                </tfoot>-->
+            </table>
+           
+        </div>
+    </div>
+</div>
+@endsection
+
