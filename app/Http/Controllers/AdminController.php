@@ -82,7 +82,6 @@ class AdminController extends Controller
             return view('emails.invoice',['Email' => $UserRequest]);*/
 
             $masterQuery = UserRequests::with('masterticket');
-
             $master_tickets =  $masterQuery->count();
             $clonemaster = clone $masterQuery;
             $ongoing_tickets = $clonemaster->Where('status','INCOMING')->count();
@@ -92,7 +91,18 @@ class AdminController extends Controller
             $scheduled_rides =$clonemaster2->where('status','SCHEDULED')->count();
             $clonemaster3 = clone $masterQuery;
             $completed_tickets = $clonemaster3->where('status','COMPLETED')->count();
-           
+            
+            $uniqueLgdCount = DB::table('user_requests as ur')
+                            ->leftJoin('master_tickets as mt', 'mt.ticketid', '=', 'ur.booking_id')
+                            ->whereIn('ur.status', ['INCOMING', 'ONHOLD', 'SCHEDULED','PICKEDUP'])
+                            ->whereNotNull('mt.lgd_code')->where('ur.autoclose','Auto')->distinct('mt.lgd_code')
+                            ->count('mt.lgd_code');
+
+
+         
+            $totalGp = DB::table('gp_list')->count();
+
+            
             $powerQuery = UserRequests::with('masterticket')->where('downreason', 'like', '%Power%');
 
             $ups = $powerQuery->count();
@@ -244,7 +254,13 @@ class AdminController extends Controller
 
             
             $provider = Provider::count();
-            $teamcount= Provider::where('zone_id','!=',0)->groupBy('providers.team_id')->groupBy('providers.zone_id')->get()->count();
+            // $teamcount= Provider::where('zone_id','!=',0)->groupBy('providers.team_id')->groupBy('providers.zone_id')->get()->count();
+            $teamcount = Provider::join('zonal_managers','providers.zone_id','=','zonal_managers.id')
+                ->where('providers.zone_id', '!=', 0)
+                ->where('providers.team_id', '!=', 0)
+                ->whereNotNull('providers.team_id')
+                ->where('providers.type',2)
+                ->count();
             $runningteamcount = UserRequests::with('masterticket')->join('providers','providers.id','=','user_requests.provider_id')->where('providers.zone_id','!=',0)->where('user_requests.status','=','PICKEDUP')->groupBy('providers.team_id')->groupBy('providers.zone_id')->get();
             $runningteams = $runningteamcount->count();
 
@@ -296,13 +312,22 @@ class AdminController extends Controller
             //dd("asdasdsad");
             return view('admin.dashboard',compact('holdteams','completedteams','notrunningteams','runningteams','teamcount','yesterdayongoing_tickets','totalongoing_tickets','yesterdayonhold_tickets','todayonhold_tickets','yesterdayclosed_tickets','todayclosed_tickets','todayongoing_tickets','notstarted_tickets','providers','fleet','provider','scheduled_rides','service','rides','user_cancelled','provider_cancelled','cancel_rides','revenue', 'wallet','master_tickets','completed_tickets','pending_tickets','ongoing_tickets','onhold_tickets','ups','electronics','fiber','poles','others','notstartedups','ongoingups','holdups','completedups','notstartedelectronics','ongoingelectronics','holdelectronics','completedelectronics','notstartedfiber','ongoingfiber','holdfiber','completedfiber','notstartedpoles','ongoingpoles','holdpoles','completedpoles','notstartedothers','ongoingothers','holdothers','completedothers','notworkedteamscount','solar','notstartedsolar','ongoingsolar','holdsolar',
                          'completedsolar','olt','notstartedolt','ongoingolt','holdolt','completedolt','ccu','notstartedccu','ongoingccu','holdccu','completedccu','completedothers_yesterday','completedfiber_yesterday','completedccu_yesterday','completedolt_yesterday','completedsolar_yesterday','completedelectronics_yesterday','completedups_yesterday',
-                          'completedothers_today','completedfiber_today','completedccu_today','completedolt_today','completedsolar_today','completedelectronics_today','completedups_today'));
+                          'completedothers_today','completedfiber_today','completedccu_today','completedolt_today','completedsolar_today','completedelectronics_today','completedups_today','uniqueLgdCount','totalGp'));
         }
         catch(Exception $e){
             return redirect()->route('admin.user.index')->with('flash_error','Something Went Wrong with Dashboard!');
         }
     }
-
+ 
+    public function DownGp(){
+        $DownGpList = DB::table('user_requests as ur')
+                            ->leftJoin('master_tickets as mt', 'mt.ticketid', '=', 'ur.booking_id')
+                            ->whereIn('ur.status', ['INCOMING', 'ONHOLD', 'SCHEDULED'])
+                            ->whereNotNull('mt.lgd_code') 
+                            ->distinct('mt.lgd_code')
+                            ->get();
+                            dd($DownGpList);
+    }
     /**
      * Ongoing History.
      *
@@ -3007,13 +3032,18 @@ public function process(Request $request)
                         if(DB::table('master_tickets')->insert($data)){
                             array_push($inserted_ids, $data['ticketid']);
                             // UserRequest related data starts
+                            if ($import_type == 2) {  
+                            $mobile = $check_lgd_code->petroller_contact_no;
+                            } else {
                             $mobile = $check_lgd_code->contact_no;
+                            }
                   
                             if ($import_type == 2) {
                             $getproviderdetails = DB::table('providers')->select( 'providers.id', 'providers.mobile', 'providers.type','providers.latitude', 'providers.longitude','provider_devices.token')->leftjoin('provider_devices','providers.id','=','provider_devices.provider_id')->where('providers.type','=',5)->where('mobile','=',$mobile)->first();
                             } else {
                             $getproviderdetails = DB::table('providers')->select( 'providers.id', 'providers.mobile', 'providers.latitude', 'providers.longitude','provider_devices.token')->leftjoin('provider_devices','providers.id','=','provider_devices.provider_id')->where('mobile','=',$mobile)->first();
                             }
+                            //dd($getproviderdetails);
                             $provider_id = $getproviderdetails->id;
                             $latitude = $check_lgd_code->latitude;
                             $longitude = $check_lgd_code->longitude;
@@ -3232,6 +3262,7 @@ public function tickets1(Request $request){
         $newto_date=$request->get('newto_date');
         $to_date=$request->get('to_date');
         $range=$request->get('range');
+        $Gpstatus=$request->get('Gpstatus');
 
 
 
@@ -3368,13 +3399,20 @@ public function tickets1(Request $request){
             $tickets->whereBetween('user_requests.finished_at', [$nfromDate , $ntoDate ]);
         } elseif ($request->status == 'Onhold') {
             $tickets->whereBetween('user_requests.started_at', [$nfromDate , $ntoDate ]);
-        } else {
+        }
+        else {
             $tickets->whereDate('user_requests.started_at', '=', $request->newfrom_date);
         }
-    } else {
+    }else{
         $tickets->whereDate('user_requests.started_at', '=', $request->newfrom_date);
     }
 }
+
+    if(isset($Gpstatus) && !empty($Gpstatus)){
+                $tickets->whereIn('user_requests.status', ['INCOMING', 'ONHOLD', 'SCHEDULED']);
+            
+    
+    }
 
         if(isset($request->range) && !empty($request->range)){
             $query_params['range'] = $request->range;
@@ -3448,7 +3486,12 @@ public function tickets1(Request $request){
     public function totalteams(Request $request)
     {   
 
-            $totalteams= Provider::join('zonal_managers','providers.zone_id','=','zonal_managers.id')->where('providers.zone_id','!=',0)->get();
+            $totalteams = Provider::join('zonal_managers','providers.zone_id','=','zonal_managers.id')
+                ->where('providers.zone_id', '!=', 0)
+                ->where('providers.team_id', '!=', 0)
+                ->whereNotNull('providers.team_id')
+                ->where('providers.type',2)
+                ->get();
             return view('admin.totalteams', compact('totalteams'));
      
 
